@@ -20,7 +20,7 @@ import (
 	"github.com/gofiber/websocket/v2"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/glebarez/sqlite"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
@@ -34,7 +34,7 @@ import (
 // --- KONSTANTA & STRUKTUR DATA ---
 const (
 	routePesan = "/pesan"
-	dbDriver   = "sqlite3"
+	dbDriver   = "sqlite"
 )
 
 type Message struct {
