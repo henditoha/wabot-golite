@@ -19,6 +19,7 @@ vendor/
 .env
 .env.local
 .env.production
+*.db
 
 # Logs
 *.log
