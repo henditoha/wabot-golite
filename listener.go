@@ -154,6 +154,11 @@ func StartListener() {
 }
 
 func triggerAutoBroadcast() {
+	// Pengecekan senyap: Jika WA belum siap/login, batalkan eksekusi tanpa mencetak log
+	if waClient == nil || !waClient.IsConnected() || waClient.Store == nil || waClient.Store.ID == nil {
+		return
+	}
+
 	processMu.Lock()
 	if isProcessing {
 		log.Println("⏳ Proses sinkronisasi sebelumnya masih berjalan...")
@@ -199,7 +204,7 @@ func handleExternalSend(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"success": false, "error": "Format JID salah"})
 	}
 
-	if waClient == nil || !waClient.IsConnected() || waClient.Store.ID == nil {
+	if waClient == nil || !waClient.IsConnected() || waClient.Store == nil || waClient.Store.ID == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"success": false, "error": "WA belum login"})
 	}
 
@@ -355,8 +360,8 @@ func handleFailedPendingJob(job pendingJob, sendErr error) {
 }
 
 func fetchAndProcess(apiURL string) {
-	if waClient == nil || !waClient.IsConnected() || waClient.Store.ID == nil {
-		log.Println("❌ Gagal sinkron: Mesin WhatsApp belum login di dashboard.")
+	// Safety layer, seharusnya sudah terhenti di triggerAutoBroadcast
+	if waClient == nil || !waClient.IsConnected() || waClient.Store == nil || waClient.Store.ID == nil {
 		return
 	}
 
