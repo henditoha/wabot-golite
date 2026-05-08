@@ -99,7 +99,7 @@ func StartListener() {
 	}
 	syncInterval = parsedInterval
 
-	// 3. Buat tabel history pengiriman dengan retry_count
+	// 3. Buat tabel otomatis sesuai spesifikasi
 	_, errDb := dbConn.Exec(`CREATE TABLE IF NOT EXISTS peserta_sinkron (
         id_server INTEGER PRIMARY KEY,
         nama TEXT,
@@ -114,10 +114,10 @@ func StartListener() {
 		log.Printf("⚠️ Gagal membuat tabel peserta_sinkron: %v", errDb)
 	}
 
-	// Tambahkan kolom retry_count jika tabel sudah ada dari versi sebelumnya (mengabaikan error jika sudah ada)
+	// Migrasi otomatis: Tambahkan kolom retry_count jika menggunakan database versi lama
 	_, _ = dbConn.Exec(`ALTER TABLE peserta_sinkron ADD COLUMN retry_count INTEGER DEFAULT 0;`)
 
-	// 4. Buat tabel template pesan lokal
+	// 4. Buat tabel template pesan lokal sesuai spesifikasi
 	_, errDbTpl := dbConn.Exec(`CREATE TABLE IF NOT EXISTS tb_template_pesan (
         kode_acara TEXT PRIMARY KEY,
         isi_template TEXT NOT NULL
