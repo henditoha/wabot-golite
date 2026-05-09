@@ -15,12 +15,12 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/websocket/v2"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
-	_ "github.com/glebarez/sqlite"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
@@ -31,7 +31,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// --- KONSTANTA & STRUKTUR DATA ---
 const (
 	routePesan = "/pesan"
 	dbDriver   = "sqlite"
