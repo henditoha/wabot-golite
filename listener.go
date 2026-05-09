@@ -53,7 +53,7 @@ type ExternalMessageRequest struct {
 type PesertaHPII struct {
 	ID           int    `json:"id"`
 	KodeAcara    string `json:"kode_acara"`
-	Status       string `json:"status"` // LUNAS atau BELUM
+	Status       string `json:"status"`
 	NoHP         string `json:"no_hp"`
 	Nama         string `json:"nama"`
 	NamaAcara    string `json:"nama_acara"`
