@@ -1,2 +1,55 @@
 /.DS_Store
 *.db
+
+# Binary
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.db
+
+# Build output
+/bin/
+/dist/
+/build/
+
+# Go
+*.test
+*.out
+vendor/
+
+# Environment
+.env
+.env.local
+.env.production
+*.db
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary
+tmp/
+temp/
+
+# Node modules (kalau ada frontend)
+node_modules/
+
+# Coverage
+coverage.out
+
+# Air live reload
+.air/
+
+# Docker
+docker-compose.override.yml
+
+# files
+merge.md
