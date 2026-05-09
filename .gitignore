@@ -47,3 +47,6 @@ coverage.out
 
 # Docker
 docker-compose.override.yml
+
+# files
+merge.md
