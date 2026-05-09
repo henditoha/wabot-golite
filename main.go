@@ -15,12 +15,12 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/websocket/v2"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
@@ -31,10 +31,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// --- KONSTANTA & STRUKTUR DATA ---
 const (
 	routePesan = "/pesan"
-	dbDriver   = "sqlite3"
+	dbDriver   = "sqlite"
 )
 
 type Message struct {
@@ -419,7 +418,7 @@ func saveAndBroadcast(jid, name, content string, isMe bool, status string, ts ti
 // --- DATABASE & WA INIT ---
 func initSQLite() {
 	var err error
-	dbConn, err = sql.Open(dbDriver, "wa_asli.db?_cache=shared&_foreign_keys=1")
+	dbConn, err = sql.Open(dbDriver, "wa_asli.db?_cache=shared&_pragma=foreign_keys=1")
 	if err != nil {
 		log.Fatalf("❌ Gagal buka SQLite: %v", err)
 	}
