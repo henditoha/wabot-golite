@@ -283,7 +283,7 @@ func getTemplateFromDB(kodeAcara string, status string) string {
 	errQuery := dbConn.QueryRow("SELECT isi_template FROM tb_template_pesan WHERE kode_acara = ? AND status = ?", kodeAcara, statusUpper).Scan(&isi)
 	if errQuery != nil {
 		if statusUpper == "BELUM" {
-			return "Yth Bapak/Ibu {{NAMA}},\n\nKami menginformasikan bahwa data pendaftaran untuk acara:\n🖥️ \"{{ACARA}}\"\n Telah kami catat.\n\nProses verifikasi max 1 x 24 jam, mohon kesabarab menunggu kami akan segera memprosesnya.\n\nTerima kasih,\nTim HPII Banten\n\n\n *_Pesan dikirim oleh sistem, mohon tidak membalas._*"
+			return "Yth Bapak/Ibu {{NAMA}},\n\nKami menginformasikan bahwa data pendaftaran untuk acara:\n🖥️ \"{{ACARA}}\"\n Telah kami catat.\n\nProses verifikasi max 1 x 24 jam, mohon kesabaran menunggu kami akan segera memprosesnya.\n\nTerima kasih,\nTim HPII Banten\n\n\n *_Pesan dikirim oleh sistem, mohon tidak membalas._*"
 		}
 		return "Yth Bapak/Ibu {{NAMA}},\n\nPembayaran Anda untuk acara:\n🖥️ \"{{ACARA}}\" telah kami terima.\n\n🗓️ Jadwal: {{TANGGAL}}\n⏰ Waktu: {{JAM}}\n\nTerima kasih,\nTim HPII Banten\n\n\n*_Pesan dikirim oleh sistem, mohon tidak membalas._*"
 	}
