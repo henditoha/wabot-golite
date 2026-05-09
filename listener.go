@@ -53,7 +53,7 @@ type ExternalMessageRequest struct {
 type PesertaHPII struct {
 	ID           int    `json:"id"`
 	KodeAcara    string `json:"kode_acara"`
-	Status       string `json:"status"`
+	Status       string `json:"status"` // LUNAS atau BELUM
 	NoHP         string `json:"no_hp"`
 	Nama         string `json:"nama"`
 	NamaAcara    string `json:"nama_acara"`
@@ -151,7 +151,7 @@ func initDatabaseTables() {
 
 	_, errAlt := dbConn.Exec(`ALTER TABLE peserta_sinkron ADD COLUMN retry_count INTEGER DEFAULT 0;`)
 	if errAlt != nil {
-		log.Printf("ℹ️ Info: Kolom retry_count sudah ada atau format DB berbeda (Aman diabaikan).")
+		// Abaikan error jika kolom sudah ada
 	}
 
 	_, errDbTpl := dbConn.Exec(`CREATE TABLE IF NOT EXISTS tb_template_pesan (
@@ -283,9 +283,9 @@ func getTemplateFromDB(kodeAcara string, status string) string {
 	errQuery := dbConn.QueryRow("SELECT isi_template FROM tb_template_pesan WHERE kode_acara = ? AND status = ?", kodeAcara, statusUpper).Scan(&isi)
 	if errQuery != nil {
 		if statusUpper == "BELUM" {
-			return "Yth Bapak/Ibu {{NAMA}},\n\nKami menginformasikan bahwa pendaftaran Anda untuk acara:\n🖥️ \"{{ACARA}}\" tercatat BELUM LUNAS.\n\nMohon segera menyelesaikan pembayaran agar proses pendaftaran dapat dilanjutkan dan tiket dapat diterbitkan.\n\nTerima kasih,\nTim HPII Banten"
+			return "Yth Bapak/Ibu {{NAMA}},\n\nKami menginformasikan bahwa data pendaftaran untuk acara :\n🖥️ \"*{{ACARA}}*\" sudah kami catat.\n\nProses verifikasi max 1x24 jam, mohon kesabarannya untuk menunggu, kami akan segera memprosesnya.\n\nTerima kasih,\nTim HPII Banten\n\n\n*_Pesan ini dibuat oleh sistem, mohon tidak membalas._*"
 		}
-		return "Yth Bapak/Ibu {{NAMA}},\n\nPembayaran Anda untuk acara:\n🖥️ \"{{ACARA}}\" telah kami terima.\n\n🗓️ Jadwal: {{TANGGAL}}\n⏰ Waktu: {{JAM}}\n\nTerima kasih,\nTim HPII Banten"
+		return "Yth Bapak/Ibu {{NAMA}},\n\nPembayaran Anda untuk acara:\n🖥️ \"*{{ACARA}}*\" telah kami terima.\n\n🗓️ Jadwal: {{TANGGAL}}\n⏰ Waktu: {{JAM}}\n\nTerima kasih,\nTim HPII Banten\n\n\n*_Pesan ini dibuat oleh sistem, mohon tidak membalas._*"
 	}
 	return isi
 }
@@ -413,6 +413,7 @@ func fetchAndProcess(apiURL string) {
 	}
 
 	if len(pesertaList) == 0 {
+		log.Println("📭 Info: Data API kosong (Array []). Tidak ada pesan baru untuk diproses.")
 		return
 	}
 
@@ -474,7 +475,8 @@ func processSinglePeserta(peserta PesertaHPII, apiURL string) {
 
 	pesan := renderMessage(peserta)
 
-	if markAsSyncedPHP(peserta.ID, apiURL) {
+	// Sekarang bot melempar peserta.Status ke fungsi markAsSyncedPHP
+	if markAsSyncedPHP(peserta.ID, peserta.Status, apiURL) {
 		executeNewWaMessage(peserta, cleanPhone, targetJID, target, pesan)
 	} else {
 		log.Printf("⚠️ Gagal update status is_sync di server PHP (ID: %d). Membatalkan eksekusi WA.", peserta.ID)
@@ -568,8 +570,14 @@ func handleFetchAndBroadcast(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true, "message": "Pemicu manual berhasil."})
 }
 
-func markAsSyncedPHP(id int, apiURL string) bool {
-	payload, _ := json.Marshal(map[string]int{"id": id})
+// markAsSyncedPHP kini mengirim ID beserta Status (misal: "BELUM" / "LUNAS") ke PHP
+func markAsSyncedPHP(id int, status string, apiURL string) bool {
+	// Menambahkan payload status agar bisa dibaca jika PHP butuh melakukan logic khusus
+	payload, _ := json.Marshal(map[string]interface{}{
+		"id":     id,
+		"status": strings.ToUpper(status),
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
