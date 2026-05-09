@@ -419,7 +419,7 @@ func saveAndBroadcast(jid, name, content string, isMe bool, status string, ts ti
 // --- DATABASE & WA INIT ---
 func initSQLite() {
 	var err error
-	dbConn, err = sql.Open(dbDriver, "wa_asli.db?_cache=shared&_foreign_keys=1")
+	dbConn, err = sql.Open(dbDriver, "wa_asli.db?_cache=shared&_pragma=foreign_keys=1")
 	if err != nil {
 		log.Fatalf("❌ Gagal buka SQLite: %v", err)
 	}
