@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/joho/godotenv"
+	"github.com/robfig/cron/v3"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
@@ -27,31 +29,45 @@ const (
 	statusPending   = "PENDING"
 	statusTerkirim  = "TERKIRIM"
 	statusFailed    = "FAILED"
-	senderName      = "HPII Banten"
+	senderName      = "Sistem Informasi"
 	uiSettingsRoute = "/ui/pengaturan"
 )
 
-var (
-	hpiiApiUser  string
-	hpiiApiPass  string
-	hpiiApiURL   string
-	syncInterval time.Duration
-)
-
+var syncInterval time.Duration
 var isProcessing = false
 var processMu sync.Mutex
+
+type APIEndpoint struct {
+	ID             int
+	NamaSistem     string
+	URL            string
+	AuthType       string
+	Username       string
+	Password       string
+	Token          string
+	CronExpression string
+	LastSyncTime   *time.Time
+	IsActive       bool
+}
 
 type ExternalMessageRequest struct {
 	Phone   string `json:"phone"`
 	Message string `json:"message"`
 }
 
-type PesertaHPII struct {
-	ID           int    `json:"id"`
-	KodeAcara    string `json:"kode_acara"`
-	Status       string `json:"status"`
-	NoHP         string `json:"no_hp"`
-	Nama         string `json:"nama"`
+// -----------------------------------------------------------------------------
+// UNIVERSAL PAYLOAD DENGAN KOMPATIBILITAS MUNDUR (BACKWARD COMPATIBILITY)
+// -----------------------------------------------------------------------------
+type UniversalPayload struct {
+	ID        interface{}       `json:"id"`
+	NoHP      string            `json:"no_hp"`
+	Nama      string            `json:"nama"`
+	KodeAcara string            `json:"kode_acara"`
+	Status    string            `json:"status"`
+	IsiPesan  string            `json:"isi_pesan"`
+	Variabel  map[string]string `json:"variabel"`
+
+	// --- LEGACY FIELDS (Dukungan untuk API PHP HPII Banten yang lama) ---
 	NamaAcara    string `json:"nama_acara"`
 	TanggalAcara string `json:"tanggal_acara"`
 	JamMulai     string `json:"jam_mulai"`
@@ -79,33 +95,22 @@ func StartListener() {
 		log.Println("⚠️ File .env tidak ditemukan, menggunakan variabel environment sistem")
 	}
 
-	hpiiApiURL = os.Getenv("API_URL")
-	hpiiApiUser = os.Getenv("API_USER")
-	hpiiApiPass = os.Getenv("API_PASS")
-
-	intervalStr := os.Getenv("SYNC_INTERVAL")
-	if intervalStr == "" {
-		intervalStr = "10s"
-	}
-
-	parsedInterval, errDur := time.ParseDuration(intervalStr)
-	if errDur != nil {
-		log.Printf("⚠️ Format SYNC_INTERVAL salah, fallback ke 10 menit. Error: %v", errDur)
-		parsedInterval = 10 * time.Minute
-	}
-	syncInterval = parsedInterval
+	syncInterval = 2 * time.Second
 
 	initDatabaseTables()
 
 	go func() {
-		log.Printf("⏰ Penjadwal Otomatis Aktif (Setiap %v)", syncInterval)
+		log.Printf("⏰ Heartbeat Scheduler Engine Aktif (Denyut: %v)", syncInterval)
 		ticker := time.NewTicker(syncInterval)
 		for range ticker.C {
 			triggerAutoBroadcast()
 		}
 	}()
 
-	app := fiber.New(fiber.Config{AppName: "WhatsApp External Listener API"})
+	app := fiber.New(fiber.Config{
+		AppName:   "WhatsApp External Listener API",
+		BodyLimit: 50 * 1024 * 1024,
+	})
 	app.Use(logger.New())
 
 	api := app.Group("/api/v1")
@@ -129,8 +134,45 @@ func StartListener() {
 }
 
 func initDatabaseTables() {
+	_, errDbApi := dbConn.Exec(`CREATE TABLE IF NOT EXISTS api_endpoints (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		nama_sistem TEXT,
+		url TEXT,
+		auth_type TEXT DEFAULT 'BASIC',
+		username TEXT,
+		password TEXT,
+		token TEXT,
+		cron_expression TEXT DEFAULT '0 */10 * * * *',
+		last_sync_time TEXT,
+		is_active BOOLEAN DEFAULT 1
+	);`)
+	if errDbApi != nil {
+		log.Printf("⚠️ Gagal membuat tabel api_endpoints: %v", errDbApi)
+	}
+
+	_, _ = dbConn.Exec(`ALTER TABLE api_endpoints ADD COLUMN auth_type TEXT DEFAULT 'BASIC';`)
+	_, _ = dbConn.Exec(`ALTER TABLE api_endpoints ADD COLUMN token TEXT;`)
+	_, _ = dbConn.Exec(`ALTER TABLE api_endpoints ADD COLUMN cron_expression TEXT DEFAULT '0 */10 * * * *';`)
+	_, _ = dbConn.Exec(`ALTER TABLE api_endpoints ADD COLUMN last_sync_time TEXT;`)
+
+	var count int
+	dbConn.QueryRow("SELECT COUNT(*) FROM api_endpoints").Scan(&count)
+	if count == 0 {
+		oldURL := os.Getenv("API_URL")
+		oldUser := os.Getenv("API_USER")
+		oldPass := os.Getenv("API_PASS")
+		if oldURL != "" {
+			_, errMigrate := dbConn.Exec("INSERT INTO api_endpoints (nama_sistem, url, auth_type, username, password, cron_expression, is_active) VALUES (?, ?, 'BASIC', ?, ?, '0 */10 * * * *', 1)", "HPII Banten", oldURL, oldUser, oldPass)
+			if errMigrate == nil {
+				log.Println("✅ Berhasil memigrasi kredensial HPII Banten ke sistem penjadwalan Cron.")
+			}
+		}
+	}
+
 	_, errDb1 := dbConn.Exec(`CREATE TABLE IF NOT EXISTS autoresponse (
-        id_server INTEGER PRIMARY KEY,
+        id_server INTEGER PRIMARY KEY AUTOINCREMENT,
+        ref_id TEXT,
+        sistem_asal TEXT,
         nama TEXT,
         no_hp TEXT,
         pesan TEXT,
@@ -144,6 +186,8 @@ func initDatabaseTables() {
 	}
 
 	_, _ = dbConn.Exec(`ALTER TABLE autoresponse ADD COLUMN retry_count INTEGER DEFAULT 0;`)
+	_, _ = dbConn.Exec(`ALTER TABLE autoresponse ADD COLUMN ref_id TEXT;`)
+	_, _ = dbConn.Exec(`ALTER TABLE autoresponse ADD COLUMN sistem_asal TEXT;`)
 
 	_, errDbTpl := dbConn.Exec(`CREATE TABLE IF NOT EXISTS tb_template_pesan (
         kode_acara TEXT,
@@ -166,6 +210,10 @@ func initDatabaseTables() {
 
 	_, _ = dbConn.Exec(`INSERT OR IGNORE INTO pengaturan_sistem (id, jam_buka, jam_tutup) VALUES (1, '05:00', '20:00');`)
 }
+
+// -----------------------------------------------------------------------------
+// WEB UI HANDLER
+// -----------------------------------------------------------------------------
 
 func handleGetUIPengaturan(c *fiber.Ctx) error {
 	buka, tutup := getJamOperasional()
@@ -219,6 +267,10 @@ func handlePostUIPengaturan(c *fiber.Ctx) error {
 	return c.Redirect(uiSettingsRoute)
 }
 
+// -----------------------------------------------------------------------------
+// LOGIKA WAKTU DINAMIS
+// -----------------------------------------------------------------------------
+
 func getJamOperasional() (string, string) {
 	var buka, tutup string
 	errQuery := dbConn.QueryRow("SELECT jam_buka, jam_tutup FROM pengaturan_sistem WHERE id = 1").Scan(&buka, &tutup)
@@ -259,53 +311,164 @@ func getTemplateFromDB(kodeAcara string, status string) string {
 	errQuery := dbConn.QueryRow("SELECT isi_template FROM tb_template_pesan WHERE kode_acara = ? AND status = ?", kodeAcara, statusUpper).Scan(&isi)
 	if errQuery != nil {
 		if statusUpper == "BELUM" {
-			return "Yth Bapak/Ibu {{NAMA}},\n\nKami menginformasikan bahwa data pendaftaran untuk acara:\n🖥️ \"{{ACARA}}\"\n Telah kami catat.\n\nProses verifikasi max 1 x 24 jam, mohon kesabaran menunggu kami akan segera memprosesnya.\n\nTerima kasih,\nTim HPII Banten\n\n\n *_Pesan dikirim oleh sistem, mohon tidak membalas._*"
+			return "Yth Bapak/Ibu {{NAMA}},\n\nKami menginformasikan bahwa data pendaftaran untuk:\n🖥️ \"{{ACARA}}\"\n Telah kami catat.\n\nProses verifikasi max 1 x 24 jam. Mohon kesediaannya menunggu.\n\nTerima kasih.\n\n\n *_Pesan dikirim oleh sistem._*"
 		}
-		return "Yth Bapak/Ibu {{NAMA}},\n\nPembayaran Anda untuk acara:\n🖥️ \"{{ACARA}}\" telah kami terima.\n\n🗓️ Jadwal: {{TANGGAL}}\n⏰ Waktu: {{JAM}}\n\nTerima kasih,\nTim HPII Banten\n\n\n*_Pesan dikirim oleh sistem, mohon tidak membalas._*"
+		return "Yth Bapak/Ibu {{NAMA}},\n\nPembayaran/Pendaftaran Anda untuk:\n🖥️ \"{{ACARA}}\" telah kami terima.\n\n🗓️ Jadwal: {{TANGGAL}}\n⏰ Waktu: {{JAM}}\n\nTerima kasih.\n\n\n*_Pesan dikirim oleh sistem._*"
 	}
 	return isi
 }
 
-func renderMessage(p PesertaHPII) string {
-	template := getTemplateFromDB(p.KodeAcara, p.Status)
-	jamText := p.JamMulai + " sd " + p.JamSelesai + " WIB"
+func renderMessage(p UniversalPayload) string {
+	// Mode 1: Jika sistem luar (Bypass) mengirim teks matang
+	if p.IsiPesan != "" {
+		return strings.ReplaceAll(p.IsiPesan, "{{NAMA}}", p.Nama)
+	}
 
+	// Mode 2: Baca Template Lokal
+	template := getTemplateFromDB(p.KodeAcara, p.Status)
 	msg := strings.ReplaceAll(template, "{{NAMA}}", p.Nama)
-	msg = strings.ReplaceAll(msg, "{{ACARA}}", p.NamaAcara)
-	msg = strings.ReplaceAll(msg, "{{TANGGAL}}", p.TanggalAcara)
-	msg = strings.ReplaceAll(msg, "{{JAM}}", jamText)
+
+	// -- A. Ganti dari JSON "variabel" (Format API Baru / Python) --
+	for key, val := range p.Variabel {
+		placeholder := "{{" + key + "}}"
+		msg = strings.ReplaceAll(msg, placeholder, val)
+	}
+
+	// -- B. Ganti dari Legacy PHP (Format API Lama HPII) --
+	if p.NamaAcara != "" {
+		msg = strings.ReplaceAll(msg, "{{ACARA}}", p.NamaAcara)
+	}
+	if p.TanggalAcara != "" {
+		msg = strings.ReplaceAll(msg, "{{TANGGAL}}", p.TanggalAcara)
+	}
+	if p.JamMulai != "" {
+		jamText := p.JamMulai
+		// Format "08:00 sd 12:00 WIB"
+		if p.JamSelesai != "" && p.JamSelesai != "-" {
+			jamText += " sd " + p.JamSelesai + " WIB"
+		} else {
+			jamText += " WIB"
+		}
+		msg = strings.ReplaceAll(msg, "{{JAM}}", jamText)
+	}
 
 	return msg
 }
 
-func triggerAutoBroadcast() {
-	if waClient == nil || !waClient.IsConnected() || waClient.Store == nil || waClient.Store.ID == nil {
-		return
-	}
+// -----------------------------------------------------------------------------
+// LOGIKA INTI: CRON PARSER MULTI-ENDPOINT & BROADCAST
+// -----------------------------------------------------------------------------
 
-	processMu.Lock()
-	if isProcessing {
-		processMu.Unlock()
-		return
-	}
-	isProcessing = true
-	processMu.Unlock()
+func setAPIAuthorization(req *http.Request, ep APIEndpoint) {
+	authType := strings.ToUpper(ep.AuthType)
 
-	defer func() {
-		processMu.Lock()
-		isProcessing = false
-		processMu.Unlock()
-	}()
-
-	log.Println("🔄 Memulai siklus sinkronisasi & pengecekan antrean...")
-	processPendingQueue()
-
-	if hpiiApiURL != "" {
-		fetchAndProcess(hpiiApiURL)
+	if authType == "BEARER" && ep.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+ep.Token)
+	} else if authType == "BASIC" && ep.Username != "" {
+		req.SetBasicAuth(ep.Username, ep.Password)
+	} else if authType == "HEADER" && ep.Token != "" {
+		req.Header.Set("x-api-key", ep.Token)
 	}
 }
 
-// PERBAIKAN CLEAN CODE: Mengatasi Deadlock SQL Koneksi Tunggal
+func isWhatsAppReady() bool {
+	return waClient != nil && waClient.IsConnected() && waClient.Store != nil && waClient.Store.ID != nil
+}
+
+func acquireProcessLock() bool {
+	processMu.Lock()
+	if isProcessing {
+		processMu.Unlock()
+		return false
+	}
+	isProcessing = true
+	processMu.Unlock()
+	return true
+}
+
+func releaseProcessLock() {
+	processMu.Lock()
+	isProcessing = false
+	processMu.Unlock()
+}
+
+func getActiveEndpoints() ([]APIEndpoint, error) {
+	rows, err := dbConn.Query("SELECT id, nama_sistem, url, COALESCE(auth_type, 'BASIC'), COALESCE(username, ''), COALESCE(password, ''), COALESCE(token, ''), COALESCE(cron_expression, '0 */10 * * * *'), last_sync_time, is_active FROM api_endpoints WHERE is_active = 1")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var endpoints []APIEndpoint
+	for rows.Next() {
+		var ep APIEndpoint
+		var lastSyncStr sql.NullString
+
+		if err := rows.Scan(&ep.ID, &ep.NamaSistem, &ep.URL, &ep.AuthType, &ep.Username, &ep.Password, &ep.Token, &ep.CronExpression, &lastSyncStr, &ep.IsActive); err == nil {
+			if lastSyncStr.Valid && lastSyncStr.String != "" {
+				t, errParse := time.ParseInLocation("2006-01-02 15:04:05", lastSyncStr.String, time.Local)
+				if errParse == nil {
+					ep.LastSyncTime = &t
+				}
+			}
+			endpoints = append(endpoints, ep)
+		}
+	}
+	return endpoints, nil
+}
+
+func isEndpointDue(ep APIEndpoint, sched cron.Schedule, now time.Time) bool {
+	if ep.LastSyncTime == nil {
+		return true
+	}
+	nextExecutionTime := sched.Next(*ep.LastSyncTime)
+	return now.After(nextExecutionTime) || now.Equal(nextExecutionTime)
+}
+
+func processEndpointsSchedule(endpoints []APIEndpoint) {
+	now := time.Now()
+	cronParser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+
+	for _, ep := range endpoints {
+		if ep.URL == "" {
+			continue
+		}
+
+		sched, errParseCron := cronParser.Parse(ep.CronExpression)
+		if errParseCron != nil {
+			log.Printf("⚠️ Format Cron '%s' salah pada sistem %s. Dilewati.", ep.CronExpression, ep.NamaSistem)
+			continue
+		}
+
+		if isEndpointDue(ep, sched, now) {
+			log.Printf("⏱️ Waktu Cron jatuh tempo. Menyiapkan penarikan data untuk: %s", ep.NamaSistem)
+			_, _ = dbConn.Exec("UPDATE api_endpoints SET last_sync_time = ? WHERE id = ?", now.Format("2006-01-02 15:04:05"), ep.ID)
+			fetchAndProcess(ep)
+		}
+	}
+}
+
+func triggerAutoBroadcast() {
+	if !isWhatsAppReady() {
+		return
+	}
+
+	if !acquireProcessLock() {
+		return
+	}
+	defer releaseProcessLock()
+
+	processPendingQueue()
+
+	endpoints, err := getActiveEndpoints()
+	if err != nil {
+		log.Printf("❌ Gagal membaca endpoint API dari database: %v", err)
+		return
+	}
+
+	processEndpointsSchedule(endpoints)
+}
+
 func processPendingQueue() {
 	now := time.Now()
 	if !isSendingWindow(now) {
@@ -325,11 +488,8 @@ func processPendingQueue() {
 			jobs = append(jobs, job)
 		}
 	}
-
-	// SANGAT PENTING: Tutup baris sebelum memanggil perintah UPDATE agar koneksi SQL terlepas
 	rows.Close()
 
-	// Mulai kirim pesan satu per satu secara aman dari array memori
 	for _, job := range jobs {
 		processSinglePendingJob(job)
 	}
@@ -371,62 +531,55 @@ func handleFailedPendingJob(job pendingJob, sendErr error) {
 	log.Printf("❌ Gagal mengirim WA pending ke %s (Percobaan %d/3): %v", job.NoHp, job.RetryCount, sendErr)
 
 	if job.RetryCount >= 3 {
-		_, errDbFail := dbConn.Exec("UPDATE autoresponse SET status_kirim = ?, retry_count = ? WHERE id_server = ?", statusFailed, job.RetryCount, job.IDServer)
-		if errDbFail != nil {
-			log.Printf("⚠️ Gagal update DB lokal ke FAILED: %v", errDbFail)
-		}
-		log.Printf("⛔ Pesan ke %s dihentikan permanen (Status %s) setelah 3 kali gagal.", job.NoHp, statusFailed)
+		_, _ = dbConn.Exec("UPDATE autoresponse SET status_kirim = ?, retry_count = ? WHERE id_server = ?", statusFailed, job.RetryCount, job.IDServer)
+		log.Printf("⛔ Pesan ke %s dihentikan permanen setelah 3 kali gagal.", job.NoHp)
 	} else {
-		_, errDbRetry := dbConn.Exec("UPDATE autoresponse SET retry_count = ? WHERE id_server = ?", job.RetryCount, job.IDServer)
-		if errDbRetry != nil {
-			log.Printf("⚠️ Gagal update retry_count DB lokal: %v", errDbRetry)
-		}
+		_, _ = dbConn.Exec("UPDATE autoresponse SET retry_count = ? WHERE id_server = ?", job.RetryCount, job.IDServer)
 	}
 }
 
-func fetchAndProcess(apiURL string) {
-	if waClient == nil || !waClient.IsConnected() || waClient.Store == nil || waClient.Store.ID == nil {
-		return
-	}
+func fetchAndProcess(ep APIEndpoint) {
+	log.Printf("🔍 [%s] Mengetuk pintu server API...", ep.NamaSistem)
 
-	pesertaList, errFetch := fetchPesertaFromAPI(apiURL)
+	pesertaList, errFetch := fetchPesertaFromAPI(ep)
 	if errFetch != nil {
-		log.Printf("❌ Gagal Fetch API: %v", errFetch)
+		log.Printf("❌ Gagal Fetch API [%s]: %v", ep.NamaSistem, errFetch)
 		return
 	}
 
 	if len(pesertaList) == 0 {
+		log.Printf("📭 [%s] Ping berhasil, namun tidak ada peserta/pendaftar baru.", ep.NamaSistem)
 		return
 	}
 
-	log.Printf("⏳ Ditemukan %d tiket peserta baru. Mulai sinkronisasi...", len(pesertaList))
+	log.Printf("⏳ [%s] Ditemukan %d data baru. Memulai injeksi ke antrean...", ep.NamaSistem, len(pesertaList))
 
 	for _, peserta := range pesertaList {
-		processSinglePeserta(peserta, apiURL)
+		processSinglePeserta(peserta, ep)
 	}
-	log.Println("🎉 Siklus sinkronisasi API selesai.")
+	log.Printf("🎉 [%s] Penarikan data selesai.", ep.NamaSistem)
 }
 
-func fetchPesertaFromAPI(apiURL string) ([]PesertaHPII, error) {
+func fetchPesertaFromAPI(ep APIEndpoint) ([]UniversalPayload, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	req, errReq := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	req, errReq := http.NewRequestWithContext(ctx, http.MethodGet, ep.URL, nil)
 	if errReq != nil {
 		return nil, fmt.Errorf("gagal buat request HTTP: %v", errReq)
 	}
 
-	req.SetBasicAuth(hpiiApiUser, hpiiApiPass)
+	setAPIAuthorization(req, ep)
 
 	client := &http.Client{}
 	resp, errDo := client.Do(req)
 	if errDo != nil {
-		return nil, fmt.Errorf("gagal hubungi server PHP: %v", errDo)
+		return nil, fmt.Errorf("gagal hubungi server: %v", errDo)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server PHP merespons dengan status error: %d", resp.StatusCode)
+		return nil, fmt.Errorf("server merespons dengan HTTP Status: %d", resp.StatusCode)
 	}
 
 	body, errRead := io.ReadAll(resp.Body)
@@ -434,7 +587,7 @@ func fetchPesertaFromAPI(apiURL string) ([]PesertaHPII, error) {
 		return nil, fmt.Errorf("gagal membaca body respons: %v", errRead)
 	}
 
-	var pesertaList []PesertaHPII
+	var pesertaList []UniversalPayload
 	if errJson := json.Unmarshal(body, &pesertaList); errJson != nil {
 		return nil, fmt.Errorf("JSON Error: %v", errJson)
 	}
@@ -442,7 +595,7 @@ func fetchPesertaFromAPI(apiURL string) ([]PesertaHPII, error) {
 	return pesertaList, nil
 }
 
-func processSinglePeserta(peserta PesertaHPII, apiURL string) {
+func processSinglePeserta(peserta UniversalPayload, ep APIEndpoint) {
 	cleanPhone := formatPhoneNumber(peserta.NoHP)
 	targetJID := cleanPhone
 	if !strings.Contains(targetJID, "@") {
@@ -450,20 +603,20 @@ func processSinglePeserta(peserta PesertaHPII, apiURL string) {
 	}
 	target, errJid := types.ParseJID(targetJID)
 	if errJid != nil {
-		log.Printf("❌ Nomor tidak valid (%s) untuk %s", cleanPhone, peserta.Nama)
+		log.Printf("❌ Nomor tidak valid (%s) untuk %s dari %s", cleanPhone, peserta.Nama, ep.NamaSistem)
 		return
 	}
 
 	pesan := renderMessage(peserta)
 
-	if markAsSyncedPHP(peserta.ID, peserta.Status, apiURL) {
-		executeNewWaMessage(peserta, cleanPhone, targetJID, target, pesan)
+	if markAsSyncedPHP(peserta, ep) {
+		executeNewWaMessage(peserta, cleanPhone, targetJID, target, pesan, ep.NamaSistem)
 	} else {
-		log.Printf("⚠️ Gagal update status is_sync di server PHP (ID: %d). Membatalkan eksekusi WA.", peserta.ID)
+		log.Printf("⚠️ Gagal menandai is_sync di server [%s] (Ref_ID: %v). Batal kirim WA.", ep.NamaSistem, peserta.ID)
 	}
 }
 
-func executeNewWaMessage(peserta PesertaHPII, cleanPhone, targetJID string, target types.JID, pesan string) {
+func executeNewWaMessage(peserta UniversalPayload, cleanPhone, targetJID string, target types.JID, pesan string, namaSistem string) {
 	now := time.Now()
 	var statusKirim string
 	var jamKirim time.Time
@@ -472,7 +625,7 @@ func executeNewWaMessage(peserta PesertaHPII, cleanPhone, targetJID string, targ
 		statusKirim = statusTerkirim
 		jamKirim = now
 
-		log.Printf("Mengeksekusi pengiriman WA [%s] ke: %s (%s)", strings.ToUpper(peserta.Status), peserta.Nama, cleanPhone)
+		log.Printf("Mengeksekusi pengiriman WA [%s] ke: %s (%s) dari %s", strings.ToUpper(peserta.Status), peserta.Nama, cleanPhone, namaSistem)
 		waCtx, waCancel := context.WithTimeout(context.Background(), 20*time.Second)
 		resp, errWa := waClient.SendMessage(waCtx, target, &waProto.Message{Conversation: proto.String(pesan)})
 		waCancel()
@@ -481,22 +634,51 @@ func executeNewWaMessage(peserta PesertaHPII, cleanPhone, targetJID string, targ
 			log.Printf("❌ Gagal mengirim WA ke %s: %v", cleanPhone, errWa)
 			statusKirim = statusFailed
 		} else {
-			saveAndBroadcast(targetJID, senderName, pesan, true, "sent", now, resp.ID)
+			saveAndBroadcast(targetJID, namaSistem, pesan, true, "sent", now, resp.ID)
 		}
 		time.Sleep(10 * time.Second)
 
 	} else {
 		statusKirim = statusPending
 		jamKirim = calculateNextSendTime(now)
-		log.Printf("🌙 Di luar jam operasional. Pesan [%s] masuk antrean %s (Jadwal: %v)", strings.ToUpper(peserta.Status), statusPending, jamKirim.Format("15:04"))
+		log.Printf("🌙 Di luar jam operasional. Pesan dari [%s] masuk antrean (Jadwal: %v)", namaSistem, jamKirim.Format("15:04"))
 	}
 
-	_, errDbIns := dbConn.Exec("INSERT OR REPLACE INTO autoresponse (id_server, nama, no_hp, pesan, status_kirim, jam_kirim, waktu_sinkron, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
-		peserta.ID, peserta.Nama, cleanPhone, pesan, statusKirim, jamKirim, now)
-	if errDbIns != nil {
-		log.Printf("⚠️ WA diproses, tapi gagal menyimpan ke history SQLite (ID: %d): %v", peserta.ID, errDbIns)
-	}
+	refID := fmt.Sprintf("%v", peserta.ID)
+	_, _ = dbConn.Exec("INSERT INTO autoresponse (ref_id, sistem_asal, nama, no_hp, pesan, status_kirim, jam_kirim, waktu_sinkron, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
+		refID, namaSistem, peserta.Nama, cleanPhone, pesan, statusKirim, jamKirim, now)
 }
+
+func markAsSyncedPHP(peserta UniversalPayload, ep APIEndpoint) bool {
+	payload, _ := json.Marshal(map[string]interface{}{
+		"id":     peserta.ID,
+		"status": strings.ToUpper(peserta.Status),
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, errReq := http.NewRequestWithContext(ctx, http.MethodPost, ep.URL, bytes.NewBuffer(payload))
+	if errReq != nil {
+		return false
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	setAPIAuthorization(req, ep)
+
+	client := &http.Client{}
+	resp, errDo := client.Do(req)
+	if errDo != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK
+}
+
+// -----------------------------------------------------------------------------
+// EKSTERNAL API MANUAL
+// -----------------------------------------------------------------------------
 
 func handleExternalSend(c *fiber.Ctx) error {
 	var req ExternalMessageRequest
@@ -546,32 +728,5 @@ func handleFetchAndBroadcast(c *fiber.Ctx) error {
 	processMu.Unlock()
 
 	go triggerAutoBroadcast()
-	return c.JSON(fiber.Map{"success": true, "message": "Pemicu manual berhasil."})
-}
-
-func markAsSyncedPHP(id int, status string, apiURL string) bool {
-	payload, _ := json.Marshal(map[string]interface{}{
-		"id":     id,
-		"status": strings.ToUpper(status),
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	req, errReq := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewBuffer(payload))
-	if errReq != nil {
-		return false
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(hpiiApiUser, hpiiApiPass)
-
-	client := &http.Client{}
-	resp, errDo := client.Do(req)
-	if errDo != nil {
-		return false
-	}
-	defer resp.Body.Close()
-
-	return resp.StatusCode == http.StatusOK
+	return c.JSON(fiber.Map{"success": true, "message": "Pemicu manual sinkronisasi Multi-Endpoint berhasil dikirim."})
 }

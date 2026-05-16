@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatsApp Web - Scan QR</title>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp - {{.UserTitle}}</title>
+    
     <link rel="stylesheet" href="/static/vendor/bootstrap.min.css">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">
+    
+    <script defer src="/static/vendor/qrcode.min.js"></script>
     <script defer src="/static/vendor/alpine.min.js"></script>
+    
     <link rel="stylesheet" href="/static/css/login.css">
 </head>
 <body x-data="loginHandler">
