@@ -135,7 +135,7 @@ func StartListener() {
 
 // initDatabaseTables memisahkan logika inisialisasi agar fungsi utama tidak terlalu panjang
 func initDatabaseTables() {
-	_, errDb1 := dbConn.Exec(`CREATE TABLE IF NOT EXISTS peserta_sinkron (
+	_, errDb1 := dbConn.Exec(`CREATE TABLE IF NOT EXISTS autoresponse (
         id_server INTEGER PRIMARY KEY,
         nama TEXT,
         no_hp TEXT,
@@ -146,10 +146,10 @@ func initDatabaseTables() {
         retry_count INTEGER DEFAULT 0
     );`)
 	if errDb1 != nil {
-		log.Printf("⚠️ Gagal membuat tabel peserta_sinkron: %v", errDb1)
+		log.Printf("⚠️ Gagal membuat tabel autoresponse: %v", errDb1)
 	}
 
-	_, errAlt := dbConn.Exec(`ALTER TABLE peserta_sinkron ADD COLUMN retry_count INTEGER DEFAULT 0;`)
+	_, errAlt := dbConn.Exec(`ALTER TABLE autoresponse ADD COLUMN retry_count INTEGER DEFAULT 0;`)
 	if errAlt != nil {
 		// Abaikan error jika kolom sudah ada
 	}
@@ -336,7 +336,7 @@ func processPendingQueue() {
 		return
 	}
 
-	rows, errQuery := dbConn.Query("SELECT id_server, nama, no_hp, pesan, COALESCE(retry_count, 0) FROM peserta_sinkron WHERE status_kirim = ? AND jam_kirim <= ?", statusPending, now)
+	rows, errQuery := dbConn.Query("SELECT id_server, nama, no_hp, pesan, COALESCE(retry_count, 0) FROM autoresponse WHERE status_kirim = ? AND jam_kirim <= ?", statusPending, now)
 	if errQuery != nil {
 		log.Printf("❌ Gagal membaca antrean pesan pending: %v", errQuery)
 		return
@@ -374,7 +374,7 @@ func processSinglePendingJob(job pendingJob) {
 		return
 	}
 
-	_, errDbUpdate := dbConn.Exec("UPDATE peserta_sinkron SET status_kirim = ?, jam_kirim = ?, retry_count = ? WHERE id_server = ?", statusTerkirim, time.Now(), job.RetryCount, job.IDServer)
+	_, errDbUpdate := dbConn.Exec("UPDATE autoresponse SET status_kirim = ?, jam_kirim = ?, retry_count = ? WHERE id_server = ?", statusTerkirim, time.Now(), job.RetryCount, job.IDServer)
 	if errDbUpdate != nil {
 		log.Printf("⚠️ Gagal update status DB lokal: %v", errDbUpdate)
 	}
@@ -388,13 +388,13 @@ func handleFailedPendingJob(job pendingJob, sendErr error) {
 	log.Printf("❌ Gagal mengirim WA pending ke %s (Percobaan %d/3): %v", job.NoHp, job.RetryCount, sendErr)
 
 	if job.RetryCount >= 3 {
-		_, errDbFail := dbConn.Exec("UPDATE peserta_sinkron SET status_kirim = ?, retry_count = ? WHERE id_server = ?", statusFailed, job.RetryCount, job.IDServer)
+		_, errDbFail := dbConn.Exec("UPDATE autoresponse SET status_kirim = ?, retry_count = ? WHERE id_server = ?", statusFailed, job.RetryCount, job.IDServer)
 		if errDbFail != nil {
 			log.Printf("⚠️ Gagal update DB lokal ke FAILED: %v", errDbFail)
 		}
 		log.Printf("⛔ Pesan ke %s dihentikan permanen (Status %s) setelah 3 kali gagal.", job.NoHp, statusFailed)
 	} else {
-		_, errDbRetry := dbConn.Exec("UPDATE peserta_sinkron SET retry_count = ? WHERE id_server = ?", job.RetryCount, job.IDServer)
+		_, errDbRetry := dbConn.Exec("UPDATE autoresponse SET retry_count = ? WHERE id_server = ?", job.RetryCount, job.IDServer)
 		if errDbRetry != nil {
 			log.Printf("⚠️ Gagal update retry_count DB lokal: %v", errDbRetry)
 		}
@@ -512,7 +512,7 @@ func executeNewWaMessage(peserta PesertaHPII, cleanPhone, targetJID string, targ
 		log.Printf("🌙 Di luar jam operasional. Pesan [%s] masuk antrean %s (Jadwal: %v)", strings.ToUpper(peserta.Status), statusPending, jamKirim.Format("15:04"))
 	}
 
-	_, errDbIns := dbConn.Exec("INSERT OR REPLACE INTO peserta_sinkron (id_server, nama, no_hp, pesan, status_kirim, jam_kirim, waktu_sinkron, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+	_, errDbIns := dbConn.Exec("INSERT OR REPLACE INTO autoresponse (id_server, nama, no_hp, pesan, status_kirim, jam_kirim, waktu_sinkron, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
 		peserta.ID, peserta.Nama, cleanPhone, pesan, statusKirim, jamKirim, now)
 	if errDbIns != nil {
 		log.Printf("⚠️ WA diproses, tapi gagal menyimpan ke history SQLite (ID: %d): %v", peserta.ID, errDbIns)
