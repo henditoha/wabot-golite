@@ -18,7 +18,6 @@
 # Go
 *.test
 *.out
-vendor/
 
 # Environment
 .env
