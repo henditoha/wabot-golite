@@ -1,0 +1,53 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background-color: #f0f2f5 !important;
+}
+
+.header-icon {
+    width: 60px;
+    height: 60px;
+    background-color: #d9fdd3;
+    color: #00a884;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+.upload-zone {
+    border: 2px dashed #cdd3d7;
+    border-radius: 12px;
+    background-color: #ffffff;
+    transition: all 0.3s ease;
+}
+
+.upload-zone.drag-active {
+    border-color: #00a884;
+    background-color: #f6fdf9;
+    transform: scale(1.02);
+}
+
+.btn-success {
+    background-color: #00a884;
+    border-color: #00a884;
+}
+
+.btn-success:hover, .btn-success:focus {
+    background-color: #008069;
+    border-color: #008069;
+}
+
+.btn-outline-success {
+    color: #008069;
+    border-color: #00a884;
+}
+
+.btn-outline-success:hover {
+    background-color: #00a884;
+    color: white;
+}
+
+[x-cloak] {
+    display: none !important;
+}

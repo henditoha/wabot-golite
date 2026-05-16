@@ -74,10 +74,10 @@ func main() {
 
 	app.Use(logger.New())
 
-	// PERBAIKAN: Mengarahkan URL /static ke direktori fisik ./static
+	// Mengarahkan URL /static ke direktori fisik ./static
 	app.Static("/static", "./static")
 
-	// Routes Utama
+	// Routes Utama Dashboard
 	app.Get("/", func(c *fiber.Ctx) error { return c.Redirect(routePesan) })
 	app.Get(routePesan, PesanPageHandler(dbConn))
 	app.Get("/login", LoginHandler)
@@ -88,10 +88,15 @@ func main() {
 	api.Post("/send", sendMessage)
 	api.Get("/qr", getQR)
 	api.Get("/status", getStatus)
-
-	// IMPLEMENTASI TUNTAS: Menerima request Mark as Read
 	api.Post("/read/:jid", markAsRead)
 
+	// ==========================================
+	// REGISTRASI FITUR BROADCAST CSV/EXCEL
+	// Memanggil fungsi dari broadcast.go
+	// ==========================================
+	SetupBroadcastRoutes(app)
+
+	// Route Websocket
 	app.Get("/ws", websocket.New(wsHandler))
 
 	// Jalankan WhatsApp Engine & Listener API secara konkuren
@@ -102,7 +107,7 @@ func main() {
 
 	port := os.Getenv("APP_PORT")
 	if port == "" {
-		port = "5007"
+		port = "5007" // Port Dashboard Utama
 	}
 	fmt.Printf("\n🚀 Dashboard Aktif: http://localhost:%s\n", port)
 
@@ -285,9 +290,8 @@ func sendMessage(c *fiber.Ctx) error {
 }
 
 // -------------------------------------------------------------------------
-// REFACTOR SONARQUBE & COMPILER: Logika markAsRead dipecah menjadi fungsi-fungsi kecil
+// MARK AS READ (Centang Biru)
 // -------------------------------------------------------------------------
-
 func markAsRead(c *fiber.Ctx) error {
 	jid := c.Params("jid")
 	target, err := types.ParseJID(jid)
@@ -295,7 +299,6 @@ func markAsRead(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid JID"})
 	}
 
-	// Jangan proses centang biru jika ini adalah grup
 	if strings.Contains(jid, "@g.us") {
 		return c.JSON(fiber.Map{"success": true, "message": "Grup diabaikan untuk status read", "read_count": 0})
 	}
@@ -314,7 +317,6 @@ func markAsRead(c *fiber.Ctx) error {
 	})
 }
 
-// Helper 1: Menarik ID pesan yang belum dibaca dari database lokal
 func fetchUnreadMessages(chatJid string, defaultSender types.JID) ([]types.MessageID, types.JID) {
 	var msgIDs []types.MessageID
 	senderJID := defaultSender
@@ -328,7 +330,7 @@ func fetchUnreadMessages(chatJid string, defaultSender types.JID) ([]types.Messa
 	for rows.Next() {
 		var mID, sJID string
 		if err := rows.Scan(&mID, &sJID); err == nil {
-			msgIDs = append(msgIDs, types.MessageID(mID)) // Format compiler yang benar
+			msgIDs = append(msgIDs, types.MessageID(mID))
 			if senderJID == defaultSender && sJID != "" {
 				if parsed, err := types.ParseJID(sJID); err == nil {
 					senderJID = parsed
@@ -339,20 +341,16 @@ func fetchUnreadMessages(chatJid string, defaultSender types.JID) ([]types.Messa
 	return msgIDs, senderJID
 }
 
-// Helper 2: Mengirimkan sinyal centang biru nyata ke Server WhatsApp
 func sendReadReceiptToWA(msgIDs []types.MessageID, chatJid types.JID, senderJid types.JID) {
 	if waClient == nil || !waClient.IsConnected() {
 		return
 	}
-
-	// FIX COMPILER: Menambahkan context.Background() sesuai signature terbaru whatsmeow
 	err := waClient.MarkRead(context.Background(), msgIDs, time.Now(), chatJid, senderJid)
 	if err != nil {
 		log.Printf("⚠️ Gagal mengirim status read ke server WA: %v", err)
 	}
 }
 
-// Helper 3: Memperbarui status baca di database lokal
 func updateLocalMessagesToRead(chatJid string) {
 	_, _ = dbConn.Exec("UPDATE messages SET status='read' WHERE chat_jid=? AND is_from_me=0", chatJid)
 }
@@ -583,6 +581,7 @@ func reconnectExistingSession() {
 	}
 }
 
+// --- WEBSOCKET & SIGNAL HANDLING ---
 func wsHandler(c *websocket.Conn) {
 	clientsMu.Lock()
 	clients[c] = true

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Broadcast Massal - HPII Banten</title>
+    
+    <link rel="stylesheet" href="/static/vendor/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">
+    <script defer src="/static/vendor/alpine.min.js"></script>
+    
+    <link rel="stylesheet" href="/static/css/broadcast.css">
+</head>
+<body class="bg-light" x-data="broadcastApp">
+
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8 col-lg-6">
+                
+                <div class="card shadow-sm border-0 rounded-4">
+                    <div class="card-header bg-white border-0 pt-4 pb-0 text-center">
+                        <div class="header-icon mx-auto mb-3">
+                            <i class="fa-solid fa-bullhorn"></i>
+                        </div>
+                        <h4 class="fw-bold text-dark">Kirim Broadcast Massal</h4>
+                        <p class="text-muted small">Upload file kontak untuk memasukkan pesan ke dalam antrean (Sistem Jeda 10 Detik).</p>
+                    </div>
+                    
+                    <div class="card-body p-4">
+                        <div x-show="alert.show" x-cloak class="alert" :class="'alert-' + alert.type" role="alert">
+                            <i class="fa-solid" :class="alert.type === 'success' ? 'fa-check-circle' : 'fa-triangle-exclamation'"></i>
+                            <span x-text="alert.message" class="ms-1"></span>
+                        </div>
+
+                        <div class="upload-zone text-center p-5 mb-4" 
+                             :class="isDragging ? 'drag-active' : ''"
+                             @dragover.prevent="isDragging = true"
+                             @dragleave.prevent="isDragging = false"
+                             @drop.prevent="handleDrop">
+                            
+                            <i class="fa-solid fa-cloud-arrow-up display-4 text-success mb-3"></i>
+                            <h6 class="fw-semibold">Tarik & Lepas File di Sini</h6>
+                            <p class="text-muted small mb-3">Format didukung: CSV (;), XLS, XLSX</p>
+                            
+                            <input type="file" id="fileInput" class="d-none" accept=".csv,.xls,.xlsx" @change="handleFileSelect">
+                            <button class="btn btn-outline-success px-4 rounded-pill" @click="$refs.fileInput.click()">
+                                Pilih File Dokumen
+                            </button>
+                            
+                            <div x-show="selectedFile" x-cloak class="mt-3 p-2 bg-light rounded text-success fw-medium border">
+                                <i class="fa-solid fa-file-excel me-2"></i><span x-text="selectedFile ? selectedFile.name : ''"></span>
+                            </div>
+                        </div>
+
+                        <div class="bg-light rounded p-3 mb-4 border">
+                            <h6 class="fw-bold fs-6 mb-2"><i class="fa-solid fa-circle-info me-2 text-primary"></i>Struktur Kolom Wajib</h6>
+                            <div class="d-flex justify-content-between text-muted small px-2">
+                                <span><strong>Kolom 1:</strong> Nama</span>
+                                <span><strong>Kolom 2:</strong> No HP (08x/628x)</span>
+                                <span><strong>Kolom 3:</strong> Isi Pesan</span>
+                            </div>
+                            <div class="text-danger small mt-2 px-2">* Baris pertama (Header) akan diabaikan otomatis.</div>
+                        </div>
+
+                        <button class="btn btn-success w-100 py-3 fw-bold rounded-3" @click="uploadFile" :disabled="isLoading || !selectedFile">
+                            <span x-show="!isLoading">Mulai Upload ke Antrean</span>
+                            <span x-show="isLoading"><i class="fa-solid fa-circle-notch fa-spin me-2"></i>Memproses File...</span>
+                        </button>
+                        
+                    </div>
+                </div>
+                
+                <div class="text-center mt-3">
+                    <a href="/" class="text-decoration-none text-muted"><i class="fa-solid fa-arrow-left me-1"></i> Kembali ke Dashboard</a>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <input type="file" x-ref="fileInput" class="d-none" accept=".csv,.xls,.xlsx" @change="handleFileSelect">
+    
+    <script src="/static/js/broadcast.js"></script>
+</body>
+</html>

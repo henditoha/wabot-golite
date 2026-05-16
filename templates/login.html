@@ -1,92 +1,50 @@
-[{
-	"resource": "/Volumes/Data 1/project-wagolite/templates/index.html",
-	"owner": "sonarlint",
-	"code": "Web:S5725",
-	"severity": 4,
-	"message": "Make sure not using resource integrity feature is safe here.",
-	"source": "sonarqube",
-	"startLineNumber": 7,
-	"startColumn": 5,
-	"endLineNumber": 7,
-	"endColumn": 107,
-	"modelVersionId": 1,
-	"origin": "extHost1"
-},{
-	"resource": "/Volumes/Data 1/project-wagolite/templates/index.html",
-	"owner": "sonarlint",
-	"code": "Web:S5725",
-	"severity": 4,
-	"message": "Make sure not using resource integrity feature is safe here.",
-	"source": "sonarqube",
-	"startLineNumber": 8,
-	"startColumn": 5,
-	"endLineNumber": 8,
-	"endColumn": 109,
-	"modelVersionId": 1,
-	"origin": "extHost1"
-},{
-	"resource": "/Volumes/Data 1/project-wagolite/templates/index.html",
-	"owner": "sonarlint",
-	"code": "Web:S5725",
-	"severity": 4,
-	"message": "Make sure not using resource integrity feature is safe here.",
-	"source": "sonarqube",
-	"startLineNumber": 9,
-	"startColumn": 5,
-	"endLineNumber": 9,
-	"endColumn": 74,
-	"modelVersionId": 1,
-	"origin": "extHost1"
-},{
-	"resource": "/Volumes/Data 1/project-wagolite/templates/index.html",
-	"owner": "sonarlint",
-	"code": "Web:S5725",
-	"severity": 4,
-	"message": "Make sure not using resource integrity feature is safe here.",
-	"source": "sonarqube",
-	"startLineNumber": 11,
-	"startColumn": 5,
-	"endLineNumber": 11,
-	"endColumn": 115,
-	"modelVersionId": 1,
-	"origin": "extHost1"
-},{
-	"resource": "/Volumes/Data 1/project-wagolite/templates/login.html",
-	"owner": "sonarlint",
-	"code": "Web:S5725",
-	"severity": 4,
-	"message": "Make sure not using resource integrity feature is safe here.",
-	"source": "sonarqube",
-	"startLineNumber": 8,
-	"startColumn": 5,
-	"endLineNumber": 8,
-	"endColumn": 74,
-	"modelVersionId": 32,
-	"origin": "extHost1"
-},{
-	"resource": "/Volumes/Data 1/project-wagolite/templates/login.html",
-	"owner": "sonarlint",
-	"code": "Web:S5725",
-	"severity": 4,
-	"message": "Make sure not using resource integrity feature is safe here.",
-	"source": "sonarqube",
-	"startLineNumber": 9,
-	"startColumn": 5,
-	"endLineNumber": 9,
-	"endColumn": 87,
-	"modelVersionId": 32,
-	"origin": "extHost1"
-},{
-	"resource": "/Volumes/Data 1/project-wagolite/templates/login.html",
-	"owner": "sonarlint",
-	"code": "Web:S5725",
-	"severity": 4,
-	"message": "Make sure not using resource integrity feature is safe here.",
-	"source": "sonarqube",
-	"startLineNumber": 13,
-	"startColumn": 5,
-	"endLineNumber": 13,
-	"endColumn": 119,
-	"modelVersionId": 32,
-	"origin": "extHost1"
-}]
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Web - Scan QR</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp - {{.UserTitle}}</title>
+    <link rel="stylesheet" href="/static/vendor/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">
+    <script defer src="/static/vendor/alpine.min.js"></script>
+    <link rel="stylesheet" href="/static/css/login.css">
+</head>
+<body x-data="loginHandler">
+
+    <div class="header-bg"></div>
+
+    <div class="main-container">
+        <div style="width: 1000px; max-width: 90vw; display: flex; align-items: center; margin-bottom: 30px; gap: 14px;">
+            <svg viewBox="0 0 39 39" width="39" height="39" fill="#fff"><path d="M10.7 32.8l.6.3c2.5 1.5 5.3 2.2 8.1 2.2 8.8 0 16-7.2 16-16 0-4.2-1.7-8.3-4.7-11.3s-7-4.7-11.3-4.7c-8.8 0-16 7.2-15.9 16.1 0 3 .8 5.9 2.3 8.4l.4.6-1.6 5.9 6.1-1.5z"></path></svg>
+            <span style="color: #fff; font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px;">WhatsApp Web</span>
+        </div>
+
+        <div class="login-card">
+            <div class="instructions">
+                <h1>Gunakan WhatsApp di komputer Anda</h1>
+                <ol>
+                    <li>Buka WhatsApp di telepon Anda</li>
+                    <li>Ketuk <strong>Menu</strong> di Android, atau <strong>Pengaturan</strong> di iPhone</li>
+                    <li>Ketuk <strong>Perangkat Tertaut</strong> lalu <strong>Tautkan Perangkat</strong></li>
+                    <li>Arahkan telepon Anda ke layar ini untuk memindai kode QR</li>
+                </ol>
+            </div>
+            
+            <div class="qr-section">
+                <div x-show="!hasQR" class="loader-ring"></div>
+                
+                <div class="qr-container" id="qrcode" x-show="hasQR" style="display: none;"></div>
+                
+                <div class="status-text">
+                    <span x-text="hasQR ? 'Pindai QR Code untuk masuk' : 'Menghasilkan QR Code...'"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/login.js"></script>
+</body>
+</html>

@@ -22,7 +22,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Konstanta Global (Mencegah duplikasi literal string untuk SonarQube)
 const (
 	waSuffix        = "@s.whatsapp.net"
 	statusPending   = "PENDING"
@@ -32,7 +31,6 @@ const (
 	uiSettingsRoute = "/ui/pengaturan"
 )
 
-// Variabel Konfigurasi Global
 var (
 	hpiiApiUser  string
 	hpiiApiPass  string
@@ -40,7 +38,6 @@ var (
 	syncInterval time.Duration
 )
 
-// Global lock untuk mencegah proses ganda
 var isProcessing = false
 var processMu sync.Mutex
 
@@ -49,11 +46,10 @@ type ExternalMessageRequest struct {
 	Message string `json:"message"`
 }
 
-// Struct PesertaHPII dimutakhirkan dengan field Status
 type PesertaHPII struct {
 	ID           int    `json:"id"`
 	KodeAcara    string `json:"kode_acara"`
-	Status       string `json:"status"` // LUNAS atau BELUM
+	Status       string `json:"status"`
 	NoHP         string `json:"no_hp"`
 	Nama         string `json:"nama"`
 	NamaAcara    string `json:"nama_acara"`
@@ -78,19 +74,18 @@ func formatPhoneNumber(phone string) string {
 	return phone
 }
 
-// StartListener menjalankan server HTTP terpisah & Init DB Lokal
 func StartListener() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("⚠️ File .env tidak ditemukan, menggunakan variabel environment sistem")
 	}
 
+	hpiiApiURL = os.Getenv("API_URL")
 	hpiiApiUser = os.Getenv("API_USER")
 	hpiiApiPass = os.Getenv("API_PASS")
-	hpiiApiURL = os.Getenv("API_URL")
 
 	intervalStr := os.Getenv("SYNC_INTERVAL")
 	if intervalStr == "" {
-		intervalStr = "10m"
+		intervalStr = "10s"
 	}
 
 	parsedInterval, errDur := time.ParseDuration(intervalStr)
@@ -133,7 +128,6 @@ func StartListener() {
 	}
 }
 
-// initDatabaseTables memisahkan logika inisialisasi agar fungsi utama tidak terlalu panjang
 func initDatabaseTables() {
 	_, errDb1 := dbConn.Exec(`CREATE TABLE IF NOT EXISTS autoresponse (
         id_server INTEGER PRIMARY KEY,
@@ -149,10 +143,7 @@ func initDatabaseTables() {
 		log.Printf("⚠️ Gagal membuat tabel autoresponse: %v", errDb1)
 	}
 
-	_, errAlt := dbConn.Exec(`ALTER TABLE autoresponse ADD COLUMN retry_count INTEGER DEFAULT 0;`)
-	if errAlt != nil {
-		// Abaikan error jika kolom sudah ada
-	}
+	_, _ = dbConn.Exec(`ALTER TABLE autoresponse ADD COLUMN retry_count INTEGER DEFAULT 0;`)
 
 	_, errDbTpl := dbConn.Exec(`CREATE TABLE IF NOT EXISTS tb_template_pesan (
         kode_acara TEXT,
@@ -173,15 +164,8 @@ func initDatabaseTables() {
 		log.Printf("⚠️ Gagal membuat tabel pengaturan_sistem: %v", errSet)
 	}
 
-	_, errIns := dbConn.Exec(`INSERT OR IGNORE INTO pengaturan_sistem (id, jam_buka, jam_tutup) VALUES (1, '05:00', '20:00');`)
-	if errIns != nil {
-		log.Printf("⚠️ Gagal insert data pengaturan awal: %v", errIns)
-	}
+	_, _ = dbConn.Exec(`INSERT OR IGNORE INTO pengaturan_sistem (id, jam_buka, jam_tutup) VALUES (1, '05:00', '20:00');`)
 }
-
-// -----------------------------------------------------------------------------
-// WEB UI HANDLER (FIBER)
-// -----------------------------------------------------------------------------
 
 func handleGetUIPengaturan(c *fiber.Ctx) error {
 	buka, tutup := getJamOperasional()
@@ -235,15 +219,11 @@ func handlePostUIPengaturan(c *fiber.Ctx) error {
 	return c.Redirect(uiSettingsRoute)
 }
 
-// -----------------------------------------------------------------------------
-// LOGIKA WAKTU DINAMIS DARI DATABASE
-// -----------------------------------------------------------------------------
-
 func getJamOperasional() (string, string) {
 	var buka, tutup string
 	errQuery := dbConn.QueryRow("SELECT jam_buka, jam_tutup FROM pengaturan_sistem WHERE id = 1").Scan(&buka, &tutup)
 	if errQuery != nil {
-		return "05:00", "20:00" // Nilai aman fallback
+		return "05:00", "20:00"
 	}
 	return buka, tutup
 }
@@ -272,10 +252,6 @@ func calculateNextSendTime(now time.Time) time.Time {
 	return now
 }
 
-// -----------------------------------------------------------------------------
-// LOGIKA RENDER TEMPLATE DARI SQLITE LOKAL
-// -----------------------------------------------------------------------------
-
 func getTemplateFromDB(kodeAcara string, status string) string {
 	var isi string
 	statusUpper := strings.ToUpper(status)
@@ -302,13 +278,9 @@ func renderMessage(p PesertaHPII) string {
 	return msg
 }
 
-// -----------------------------------------------------------------------------
-// PROSES PENGIRIMAN & PENARIKAN DATA
-// -----------------------------------------------------------------------------
-
 func triggerAutoBroadcast() {
 	if waClient == nil || !waClient.IsConnected() || waClient.Store == nil || waClient.Store.ID == nil {
-		return // Silent return jika WA belum login
+		return
 	}
 
 	processMu.Lock()
@@ -327,9 +299,13 @@ func triggerAutoBroadcast() {
 
 	log.Println("🔄 Memulai siklus sinkronisasi & pengecekan antrean...")
 	processPendingQueue()
-	fetchAndProcess(hpiiApiURL)
+
+	if hpiiApiURL != "" {
+		fetchAndProcess(hpiiApiURL)
+	}
 }
 
+// PERBAIKAN CLEAN CODE: Mengatasi Deadlock SQL Koneksi Tunggal
 func processPendingQueue() {
 	now := time.Now()
 	if !isSendingWindow(now) {
@@ -341,13 +317,20 @@ func processPendingQueue() {
 		log.Printf("❌ Gagal membaca antrean pesan pending: %v", errQuery)
 		return
 	}
-	defer rows.Close()
 
+	var jobs []pendingJob
 	for rows.Next() {
 		var job pendingJob
-		if errScan := rows.Scan(&job.IDServer, &job.Nama, &job.NoHp, &job.Pesan, &job.RetryCount); errScan != nil {
-			continue
+		if errScan := rows.Scan(&job.IDServer, &job.Nama, &job.NoHp, &job.Pesan, &job.RetryCount); errScan == nil {
+			jobs = append(jobs, job)
 		}
+	}
+
+	// SANGAT PENTING: Tutup baris sebelum memanggil perintah UPDATE agar koneksi SQL terlepas
+	rows.Close()
+
+	// Mulai kirim pesan satu per satu secara aman dari array memori
+	for _, job := range jobs {
 		processSinglePendingJob(job)
 	}
 }
@@ -403,7 +386,7 @@ func handleFailedPendingJob(job pendingJob, sendErr error) {
 
 func fetchAndProcess(apiURL string) {
 	if waClient == nil || !waClient.IsConnected() || waClient.Store == nil || waClient.Store.ID == nil {
-		return // Double safety check
+		return
 	}
 
 	pesertaList, errFetch := fetchPesertaFromAPI(apiURL)
@@ -413,7 +396,6 @@ func fetchAndProcess(apiURL string) {
 	}
 
 	if len(pesertaList) == 0 {
-		log.Println("📭 Info: Data API kosong (Array []). Tidak ada pesan baru untuk diproses.")
 		return
 	}
 
@@ -460,7 +442,6 @@ func fetchPesertaFromAPI(apiURL string) ([]PesertaHPII, error) {
 	return pesertaList, nil
 }
 
-// Direfactor untuk memangkas Cognitive Complexity
 func processSinglePeserta(peserta PesertaHPII, apiURL string) {
 	cleanPhone := formatPhoneNumber(peserta.NoHP)
 	targetJID := cleanPhone
@@ -475,7 +456,6 @@ func processSinglePeserta(peserta PesertaHPII, apiURL string) {
 
 	pesan := renderMessage(peserta)
 
-	// Sekarang bot melempar peserta.Status ke fungsi markAsSyncedPHP
 	if markAsSyncedPHP(peserta.ID, peserta.Status, apiURL) {
 		executeNewWaMessage(peserta, cleanPhone, targetJID, target, pesan)
 	} else {
@@ -483,7 +463,6 @@ func processSinglePeserta(peserta PesertaHPII, apiURL string) {
 	}
 }
 
-// Logika inti pengiriman dipisah agar lebih modular
 func executeNewWaMessage(peserta PesertaHPII, cleanPhone, targetJID string, target types.JID, pesan string) {
 	now := time.Now()
 	var statusKirim string
@@ -570,9 +549,7 @@ func handleFetchAndBroadcast(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true, "message": "Pemicu manual berhasil."})
 }
 
-// markAsSyncedPHP kini mengirim ID beserta Status (misal: "BELUM" / "LUNAS") ke PHP
 func markAsSyncedPHP(id int, status string, apiURL string) bool {
-	// Menambahkan payload status agar bisa dibaca jika PHP butuh melakukan logic khusus
 	payload, _ := json.Marshal(map[string]interface{}{
 		"id":     id,
 		"status": strings.ToUpper(status),
