@@ -1,0 +1,126 @@
+* { 
+    box-sizing: border-box; 
+    margin: 0; 
+    padding: 0; 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+}
+
+body { 
+    background-color: #d1d7db; 
+    display: flex; 
+    flex-direction: column; 
+    min-height: 100vh; 
+    overflow: hidden; 
+}
+
+.header-bg {
+    position: absolute; 
+    top: 0; 
+    left: 0; 
+    width: 100%; 
+    height: 222px;
+    background-color: #00a884; 
+    z-index: -1;
+}
+
+.main-container {
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center;
+    flex: 1; 
+    padding: 20px; 
+    z-index: 1; 
+    margin-top: -40px;
+}
+
+.login-card {
+    background: #fff; 
+    border-radius: 3px; 
+    box-shadow: 0 17px 50px 0 rgba(11,20,26,.19), 0 12px 15px 0 rgba(11,20,26,.24);
+    display: flex; 
+    justify-content: space-between;
+    width: 1000px; 
+    max-width: 90vw; 
+    min-height: 400px; 
+    padding: 64px;
+}
+
+.instructions { 
+    flex: 1; 
+    padding-right: 60px; 
+    color: #3b4a54; 
+}
+
+.instructions h1 { 
+    font-size: 28px; 
+    font-weight: 300; 
+    margin-bottom: 40px; 
+    color: #41525d; 
+}
+
+.instructions ol { 
+    margin-left: 24px; 
+    font-size: 18px; 
+    line-height: 28px; 
+    color: #3b4a54; 
+}
+
+.instructions li { 
+    margin-bottom: 20px; 
+    padding-left: 8px; 
+}
+
+.instructions strong { 
+    font-weight: 600; 
+    color: #111b21; 
+}
+
+.qr-section { 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: flex-start; 
+    position: relative; 
+}
+
+.qr-container { 
+    padding: 10px; 
+    background: #fff; 
+    border-radius: 8px; 
+}
+
+/* Spinner Loading sebelum QR muncul */
+.loader-ring {
+    display: inline-block; 
+    width: 50px; 
+    height: 50px;
+    border: 4px solid rgba(0, 168, 132, 0.2); 
+    border-radius: 50%;
+    border-top-color: #00a884; 
+    animation: spin 1s ease-in-out infinite;
+    margin-top: 80px;
+}
+
+@keyframes spin { 
+    to { transform: rotate(360deg); } 
+}
+
+.status-text { 
+    margin-top: 30px; 
+    font-size: 14px; 
+    color: #667781; 
+    text-align: center; 
+}
+
+@media (max-width: 900px) {
+    .login-card { 
+        flex-direction: column; 
+        padding: 40px 24px; 
+        align-items: center; 
+    }
+    .instructions { 
+        padding-right: 0; 
+        margin-bottom: 40px; 
+    }
+}

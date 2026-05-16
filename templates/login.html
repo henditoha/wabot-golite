@@ -1,152 +1,92 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Web - Scan QR</title>
-    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        body { background-color: #d1d7db; display: flex; flex-direction: column; min-height: 100vh; overflow: hidden; }
-        
-        .header-bg {
-            position: absolute; top: 0; left: 0; width: 100%; height: 222px;
-            background-color: #00a884; z-index: -1;
-        }
-        
-        .main-container {
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            flex: 1; padding: 20px; z-index: 1; margin-top: -40px;
-        }
-
-        .login-card {
-            background: #fff; border-radius: 3px; box-shadow: 0 17px 50px 0 rgba(11,20,26,.19), 0 12px 15px 0 rgba(11,20,26,.24);
-            display: flex; justify-content: space-between;
-            width: 1000px; max-width: 90vw; min-height: 400px; padding: 64px;
-        }
-
-        .instructions { flex: 1; padding-right: 60px; color: #3b4a54; }
-        .instructions h1 { font-size: 28px; font-weight: 300; margin-bottom: 40px; color: #41525d; }
-        .instructions ol { margin-left: 24px; font-size: 18px; line-height: 28px; color: #3b4a54; }
-        .instructions li { margin-bottom: 20px; padding-left: 8px; }
-        .instructions strong { font-weight: 600; color: #111b21; }
-
-        .qr-section { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; position: relative; }
-        .qr-container { padding: 10px; background: #fff; border-radius: 8px; }
-        
-        /* Spinner Loading sebelum QR muncul */
-        .loader-ring {
-            display: inline-block; width: 50px; height: 50px;
-            border: 4px solid rgba(0, 168, 132, 0.2); border-radius: 50%;
-            border-top-color: #00a884; animation: spin 1s ease-in-out infinite;
-            margin-top: 80px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .status-text { margin-top: 30px; font-size: 14px; color: #667781; text-align: center; }
-
-        @media (max-width: 900px) {
-            .login-card { flex-direction: column; padding: 40px 24px; align-items: center; }
-            .instructions { padding-right: 0; margin-bottom: 40px; }
-        }
-    </style>
-</head>
-<body x-data="loginHandler">
-
-    <div class="header-bg"></div>
-
-    <div class="main-container">
-        <div style="width: 1000px; max-width: 90vw; display: flex; align-items: center; margin-bottom: 30px; gap: 14px;">
-            <svg viewBox="0 0 39 39" width="39" height="39" fill="#fff"><path d="M10.7 32.8l.6.3c2.5 1.5 5.3 2.2 8.1 2.2 8.8 0 16-7.2 16-16 0-4.2-1.7-8.3-4.7-11.3s-7-4.7-11.3-4.7c-8.8 0-16 7.2-15.9 16.1 0 3 .8 5.9 2.3 8.4l.4.6-1.6 5.9 6.1-1.5z"></path></svg>
-            <span style="color: #fff; font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px;">WhatsApp Web</span>
-        </div>
-
-        <div class="login-card">
-            <div class="instructions">
-                <h1>Gunakan WhatsApp di komputer Anda</h1>
-                <ol>
-                    <li>Buka WhatsApp di telepon Anda</li>
-                    <li>Ketuk <strong>Menu</strong> di Android, atau <strong>Pengaturan</strong> di iPhone</li>
-                    <li>Ketuk <strong>Perangkat Tertaut</strong> lalu <strong>Tautkan Perangkat</strong></li>
-                    <li>Arahkan telepon Anda ke layar ini untuk memindai kode QR</li>
-                </ol>
-            </div>
-            
-            <div class="qr-section">
-                <div x-show="!hasQR" class="loader-ring"></div>
-                
-                <div class="qr-container" id="qrcode" x-show="hasQR"></div>
-                
-                <div class="status-text">
-                    <span x-text="hasQR ? 'Pindai QR Code untuk masuk' : 'Menghasilkan QR Code...'"></span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-<script>
-    document.addEventListener('alpine:init', () => {
-        Alpine.data('loginHandler', () => ({
-            hasQR: false,
-            currentQRText: '',
-            qrElement: null,
-
-            init() {
-                // Jalankan proses polling (pengecekan berulang)
-                this.checkStatus();
-                setInterval(() => this.checkStatus(), 2000);
-            },
-
-            checkStatus() {
-                // 1. Cek Status Login & Koneksi
-                fetch('/api/status')
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.logged_in) {
-                            // Jika sukses login, langsung diarahkan ke dashboard pesan
-                            window.location.href = '/pesan';
-                            return;
-                        }
-                        
-                        // 2. Jika belum login, ambil string QR Code terbaru
-                        this.fetchQR();
-                    })
-                    .catch(err => console.log('Checking status...', err));
-            },
-
-            fetchQR() {
-                fetch('/api/qr')
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.qr && data.qr !== this.currentQRText) {
-                            this.currentQRText = data.qr;
-                            this.hasQR = true;
-                            this.renderQR(this.currentQRText);
-                        } else if (!data.qr) {
-                            this.hasQR = false;
-                        }
-                    })
-                    .catch(() => {});
-            },
-
-            renderQR(text) {
-                const container = document.getElementById('qrcode');
-                container.innerHTML = ''; // Bersihkan QR lama
-                
-                // Gunakan qrcode.js untuk menggambar
-                this.qrElement = new QRCode(container, {
-                    text: text,
-                    width: 264,
-                    height: 264,
-                    colorDark : "#111b21",
-                    colorLight : "#ffffff",
-                    correctLevel : QRCode.CorrectLevel.L
-                });
-            }
-        }));
-    });
-</script>
-</body>
-</html>
+[{
+	"resource": "/Volumes/Data 1/project-wagolite/templates/index.html",
+	"owner": "sonarlint",
+	"code": "Web:S5725",
+	"severity": 4,
+	"message": "Make sure not using resource integrity feature is safe here.",
+	"source": "sonarqube",
+	"startLineNumber": 7,
+	"startColumn": 5,
+	"endLineNumber": 7,
+	"endColumn": 107,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/Volumes/Data 1/project-wagolite/templates/index.html",
+	"owner": "sonarlint",
+	"code": "Web:S5725",
+	"severity": 4,
+	"message": "Make sure not using resource integrity feature is safe here.",
+	"source": "sonarqube",
+	"startLineNumber": 8,
+	"startColumn": 5,
+	"endLineNumber": 8,
+	"endColumn": 109,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/Volumes/Data 1/project-wagolite/templates/index.html",
+	"owner": "sonarlint",
+	"code": "Web:S5725",
+	"severity": 4,
+	"message": "Make sure not using resource integrity feature is safe here.",
+	"source": "sonarqube",
+	"startLineNumber": 9,
+	"startColumn": 5,
+	"endLineNumber": 9,
+	"endColumn": 74,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/Volumes/Data 1/project-wagolite/templates/index.html",
+	"owner": "sonarlint",
+	"code": "Web:S5725",
+	"severity": 4,
+	"message": "Make sure not using resource integrity feature is safe here.",
+	"source": "sonarqube",
+	"startLineNumber": 11,
+	"startColumn": 5,
+	"endLineNumber": 11,
+	"endColumn": 115,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/Volumes/Data 1/project-wagolite/templates/login.html",
+	"owner": "sonarlint",
+	"code": "Web:S5725",
+	"severity": 4,
+	"message": "Make sure not using resource integrity feature is safe here.",
+	"source": "sonarqube",
+	"startLineNumber": 8,
+	"startColumn": 5,
+	"endLineNumber": 8,
+	"endColumn": 74,
+	"modelVersionId": 32,
+	"origin": "extHost1"
+},{
+	"resource": "/Volumes/Data 1/project-wagolite/templates/login.html",
+	"owner": "sonarlint",
+	"code": "Web:S5725",
+	"severity": 4,
+	"message": "Make sure not using resource integrity feature is safe here.",
+	"source": "sonarqube",
+	"startLineNumber": 9,
+	"startColumn": 5,
+	"endLineNumber": 9,
+	"endColumn": 87,
+	"modelVersionId": 32,
+	"origin": "extHost1"
+},{
+	"resource": "/Volumes/Data 1/project-wagolite/templates/login.html",
+	"owner": "sonarlint",
+	"code": "Web:S5725",
+	"severity": 4,
+	"message": "Make sure not using resource integrity feature is safe here.",
+	"source": "sonarqube",
+	"startLineNumber": 13,
+	"startColumn": 5,
+	"endLineNumber": 13,
+	"endColumn": 119,
+	"modelVersionId": 32,
+	"origin": "extHost1"
+}]

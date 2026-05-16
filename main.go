@@ -73,7 +73,9 @@ func main() {
 	})
 
 	app.Use(logger.New())
-	app.Static("/static", "./templates")
+
+	// PERBAIKAN: Mengarahkan URL /static ke direktori fisik ./static
+	app.Static("/static", "./static")
 
 	// Routes Utama
 	app.Get("/", func(c *fiber.Ctx) error { return c.Redirect(routePesan) })
@@ -581,7 +583,6 @@ func reconnectExistingSession() {
 	}
 }
 
-// --- WEBSOCKET & SIGNAL HANDLING ---
 func wsHandler(c *websocket.Conn) {
 	clientsMu.Lock()
 	clients[c] = true
