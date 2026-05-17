@@ -1,32 +1,59 @@
+//go:build ignore
+
 package main
 
 import (
+	"database/sql"
 	"log"
+	"os"
+
+	"github.com/joho/godotenv"
+	_ "github.com/mattn/go-sqlite3" // Driver SQLite bawaan proyek Anda
 )
 
-// RunSeeders berfungsi untuk mengisi data awal (master data) ke database.
-// Menggunakan metode INSERT OR REPLACE agar aman dijalankan berulang kali (Idempotent).
-func RunSeeders() {
-	log.Println("🌱 Memulai proses injeksi Seed Data ke database...")
+func main() {
+	log.Println("🌱 [SEEDER] Memulai Eksekusi Master Data Seeder Standalone...")
+
+	// 1. Memuat konfigurasi .env jika tersedia untuk fleksibilitas nama database
+	if err := godotenv.Load(); err != nil {
+		log.Println("⚠️ File .env tidak ditemukan, menggunakan nilai fallback default")
+	}
+
+	dbName := os.Getenv("DB_NAME")
+	if dbName == "" {
+		dbName = "wa_asli.db"
+	}
+
+	log.Printf("📂 Membuka koneksi database lokal: %s", dbName)
+	dbConn, err := sql.Open("sqlite3", dbName)
+	if err != nil {
+		log.Fatalf("❌ Gagal membuka koneksi database: %v", err)
+	}
+	defer dbConn.Close()
+
+	// 2. Memastikan database merespons sebelum injeksi data dilakukan
+	if err = dbConn.Ping(); err != nil {
+		log.Fatalf("❌ Database tidak merespons (Ping Gagal): %v", err)
+	}
+
+	log.Println("🚀 Menjalankan Injeksi Master Data (Mekanisme INSERT OR REPLACE)...")
 
 	// -------------------------------------------------------------------------
-	// 1. SEED PENGATURAN SISTEM
+	// A. SEED DATA TABEL: PENGATURAN SISTEM
 	// -------------------------------------------------------------------------
-	_, err := dbConn.Exec(`
+	_, err = dbConn.Exec(`
 		INSERT OR REPLACE INTO pengaturan_sistem (id, jam_buka, jam_tutup) 
 		VALUES (1, '00:00', '23:59');
 	`)
 	if err != nil {
-		log.Printf("❌ Gagal seed tabel pengaturan_sistem: %v", err)
+		log.Printf("❌ Gagal menyuntikkan data ke pengaturan_sistem: %v", err)
 	} else {
-		log.Println("✅ [1/3] Seed pengaturan_sistem berhasil (00:00 - 23:59).")
+		log.Println("✅ [1/3] Seed pengaturan_sistem sukses (Jendela Aktif: 00:00 - 23:59).")
 	}
 
 	// -------------------------------------------------------------------------
-	// 2. SEED API ENDPOINTS
+	// B. SEED DATA TABEL: API ENDPOINTS
 	// -------------------------------------------------------------------------
-	// Kita definisikan ID secara eksplisit (1 dan 2) agar REPLACE bisa bekerja
-	// dan mencegah duplikasi data jika seeder dijalankan lebih dari sekali.
 	_, err = dbConn.Exec(`
 		INSERT OR REPLACE INTO api_endpoints 
 		(id, nama_sistem, url, auth_type, username, password, token, cron_expression, last_sync_time, is_active) 
@@ -35,13 +62,13 @@ func RunSeeders() {
 		(2, 'e-Kredensial', 'http://127.0.0.1:7007/api/v1/wabot/reminder', 'HEADER', NULL, NULL, 'akang-hendi-secret-wabot-key', '*/10 * * * * *', '2026-05-17 05:28:51', 1);
 	`)
 	if err != nil {
-		log.Printf("❌ Gagal seed tabel api_endpoints: %v", err)
+		log.Printf("❌ Gagal menyuntikkan data ke api_endpoints: %v", err)
 	} else {
-		log.Println("✅ [2/3] Seed api_endpoints berhasil (HPII Banten & e-Kredensial).")
+		log.Println("✅ [2/3] Seed api_endpoints sukses (HPII Banten & e-Kredensial).")
 	}
 
 	// -------------------------------------------------------------------------
-	// 3. SEED TEMPLATE PESAN
+	// C. SEED DATA TABEL: TEMPLATE PESAN
 	// -------------------------------------------------------------------------
 	_, err = dbConn.Exec(`
 		INSERT OR REPLACE INTO tb_template_pesan (kode_acara, status, isi_template) 
@@ -81,10 +108,10 @@ Terima kasih,
 *Sub-Komite Kredensial Keperawatan*');
 	`)
 	if err != nil {
-		log.Printf("❌ Gagal seed tabel tb_template_pesan: %v", err)
+		log.Printf("❌ Gagal menyuntikkan data ke tb_template_pesan: %v", err)
 	} else {
-		log.Println("✅ [3/3] Seed tb_template_pesan berhasil.")
+		log.Println("✅ [3/3] Seed tb_template_pesan sukses.")
 	}
 
-	log.Println("🎉 Seluruh Master Data telah berhasil diinjeksi ke Database!")
+	log.Println("🎉 [SELESAI] Seluruh data master berhasil disegarkan ke dalam database lokal!")
 }
